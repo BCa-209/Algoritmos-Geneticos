@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación de Coevolución Antagónica</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦠 Simulación de Coevolución Antagónica</h1>
+            <p class="subtitle">Bacterias vs Fagocitos - Evolución mediante Algoritmos Genéticos</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="left-panel">
+                <!-- Canvas de simulación -->
+                <div class="simulation-container">
+                    <canvas id="simulation-canvas" width="800" height="600"></canvas>
+                    
+                    <div class="simulation-controls">
+                        <div class="control-group">
+                            <button id="start-btn" class="btn btn-success">▶ Iniciar</button>
+                            <button id="stop-btn" class="btn btn-danger" disabled>⏹ Detener</button>
+                            <button id="pause-btn" class="btn btn-warning" disabled>⏸ Pausar</button>
+                            <button id="resume-btn" class="btn btn-info" disabled>▶ Reanudar</button>
+                            <button id="reset-btn" class="btn btn-secondary">↺ Reiniciar</button>
+                            <button id="step-btn" class="btn btn-light">⏭ Paso</button>
+                        </div>
+                        
+                        <div class="status-indicator">
+                            <span>Estado: </span>
+                            <span id="status-indicator" class="status-stopped">Detenido</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Estadísticas en tiempo real -->
+                <div class="stats-container">
+                    <h3>📊 Estadísticas en Tiempo Real</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-label">Generación</span>
+                            <span id="generation" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Bacterias</span>
+                            <span id="bacteria-count" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Fagocitos</span>
+                            <span id="phagocyte-count" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Capturas</span>
+                            <span id="total-captures" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Reproducciones</span>
+                            <span id="total-reproductions" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Tiempo</span>
+                            <span id="run-time" class="stat-value">0s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <!-- Panel de control de parámetros -->
+                <div class="control-panel">
+                    <h3>⚙️ Parámetros de Simulación</h3>
+                    
+                    <div class="parameter-group">
+                        <h4>Entorno</h4>
+                        <div class="parameter">
+                            <label for="param-canvas_width">Ancho del canvas:</label>
+                            <input type="number" id="param-canvas_width" class="parameter-input" value="800">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-canvas_height">Alto del canvas:</label>
+                            <input type="number" id="param-canvas_height" class="parameter-input" value="600">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-background_color">Color de fondo:</label>
+                            <input type="color" id="param-background_color" class="parameter-input" value="#f0f0f0">
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group">
+                        <h4>Población Inicial</h4>
+                        <div class="parameter">
+                            <label for="param-initial_bacteria_count">Bacterias:</label>
+                            <input type="number" id="param-initial_bacteria_count" class="parameter-input" value="100">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-initial_phagocyte_count">Fagocitos:</label>
+                            <input type="number" id="param-initial_phagocyte_count" class="parameter-input" value="50">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-max_population">Población máxima:</label>
+                            <input type="number" id="param-max_population" class="parameter-input" value="200">
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group">
+                        <h4>Algoritmo Genético</h4>
+                        <div class="parameter">
+                            <label for="param-mutation_rate">Tasa de mutación:</label>
+                            <input type="number" id="param-mutation_rate" class="parameter-input" step="0.01" min="0" max="1" value="0.01">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-crossover_rate">Tasa de cruce:</label>
+                            <input type="number" id="param-crossover_rate" class="parameter-input" step="0.01" min="0" max="1" value="0.8">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-mutation_strength">Fuerza de mutación:</label>
+                            <input type="number" id="param-mutation_strength" class="parameter-input" step="0.01" min="0" value="0.1">
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group">
+                        <h4>Comportamiento</h4>
+                        <div class="parameter">
+                            <label for="param-max_speed">Velocidad máxima:</label>
+                            <input type="number" id="param-max_speed" class="parameter-input" step="0.1" value="2.0">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-detection_radius">Radio de detección:</label>
+                            <input type="number" id="param-detection_radius" class="parameter-input" value="50.0">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-capture_radius">Radio de captura:</label>
+                            <input type="number" id="param-capture_radius" class="parameter-input" value="10.0">
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group">
+                        <h4>Rendimiento</h4>
+                        <div class="parameter">
+                            <label for="param-fps">FPS:</label>
+                            <input type="number" id="param-fps" class="parameter-input" value="30">
+                        </div>
+                        <div class="parameter">
+                            <label for="param-max_generations">Generaciones máx:</label>
+                            <input type="number" id="param-max_generations" class="parameter-input" value="1000">
+                        </div>
+                    </div>
+                    
+                    <button id="update-params-btn" class="btn btn-primary">Actualizar Parámetros</button>
+                </div>
+                
+                <!-- Gráficos -->
+                <div class="charts-container">
+                    <h3>📈 Evolución del Fitness</h3>
+                    <canvas id="fitness-chart"></canvas>
+                    
+                    <h3>📊 Evolución de la Población</h3>
+                    <canvas id="population-chart"></canvas>
+                </div>
+                
+                <!-- Estadísticas de rendimiento -->
+                <div class="performance-stats">
+                    <h3>⚡ Rendimiento</h3>
+                    <div class="performance-grid">
+                        <div class="perf-stat">
+                            <span class="perf-label">Tiempo promedio/generación:</span>
+                            <span id="avg-gen-time" class="perf-value">0.0000s</span>
+                        </div>
+                        <div class="perf-stat">
+                            <span class="perf-label">FPS de simulación:</span>
+                            <span id="simulation-fps" class="perf-value">0.0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Notificación -->
+        <div id="notification" class="notification"></div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

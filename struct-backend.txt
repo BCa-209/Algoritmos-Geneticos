@@ -1,0 +1,53 @@
+=====================================================================================
+Simulación de Coevolución Antagónica: Bacterias vs. Fagocitos en un Entorno Evolutivo
+=====================================================================================
+
+/Algoritmos-Geneticos/
+├── Dockerfile
+├── docker-compose.yml
+├── .dockerignore
+├── index.html
+├── backend/
+│   ├── api.py
+│   ├── config.py
+│   ├── requirements.txt
+│   ├── .env
+│   ├── __init__.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── agents.py
+│   │   ├── simulation.py
+│   │   ├── genetic_algorithm.py
+│   │   └── fitness.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── genome.py
+│   └── utils/
+│       ├── __init__.py
+│       └── helpers.py
+└── frontend/
+    ├── index.html
+    ├── app.js
+    └── styles.css
+
+
+/Algoritmos-Geneticos/
+├── backend/
+│   ├── __init__.py
+│   ├── api.py (renombrado de app.py para consistencia)
+│   ├── config.py
+│   ├── requirements.txt
+│   └── core/
+│       ├── __init__.py
+│       ├── simulation.py
+│       ├── agents.py
+│       ├── genetic_algorithm.py
+│       ├── fitness.py
+│       └── helpers.py
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   └── styles.css
+├── models/ (opcional)
+│   └── genome.py
+└── app.py (punto de entrada principal)
