@@ -2,8 +2,8 @@
 Configuración de la simulación
 """
 import numpy as np
-from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from dataclasses import dataclass, field
+from typing import Tuple, Dict, Any, List
 
 @dataclass
 class SimulationConfig:
@@ -52,6 +52,20 @@ class SimulationConfig:
     PHAGOCYTE_BORDER_WIDTH: float = 3.0
     PHAGOCYTE_CENTER_RATIO: float = 0.6
     
+    # Sistema de aparición de fagocitos
+    PHAGOCYTE_SPAWN_MODE: str = 'fixed_point'  # 'random' o 'fixed_point'
+    PHAGOCYTE_SPAWN_POINT: Tuple[float, float] = (800.0, 300.0)  # Centro del canvas
+    PHAGOCYTE_SPAWN_RADIUS: float = 50.0  # Radio de dispersión inicial
+    
+    # Sistema de ranking
+    RANKING_UPDATE_FREQUENCY: int = 5
+    DETECTION_PRIORITY: str = 'vulnerability'  # 'vulnerability' o 'distance'
+    
+    # Parámetros de vulnerabilidad
+    VULNERABILITY_COLOR_WEIGHT: float = 0.6  # Peso del color en vulnerabilidad
+    VULNERABILITY_ENERGY_WEIGHT: float = 0.3  # Peso de la energía
+    VULNERABILITY_AGE_WEIGHT: float = 0.1     # Peso de la edad
+    
     @classmethod
     def get_default_parameters(cls) -> Dict[str, Any]:
         """Obtener parámetros por defecto como diccionario"""
@@ -80,7 +94,15 @@ class SimulationConfig:
             'bacillus_base_length': cls.BACILLUS_BASE_LENGTH,
             'bacillus_base_width': cls.BACILLUS_BASE_WIDTH,
             'phagocyte_border_width': cls.PHAGOCYTE_BORDER_WIDTH,
-            'phagocyte_center_ratio': cls.PHAGOCYTE_CENTER_RATIO
+            'phagocyte_center_ratio': cls.PHAGOCYTE_CENTER_RATIO,
+            'phagocyte_spawn_mode': cls.PHAGOCYTE_SPAWN_MODE,
+            'phagocyte_spawn_point': cls.PHAGOCYTE_SPAWN_POINT,
+            'phagocyte_spawn_radius': cls.PHAGOCYTE_SPAWN_RADIUS,
+            'ranking_update_frequency': cls.RANKING_UPDATE_FREQUENCY,
+            'detection_priority': cls.DETECTION_PRIORITY,
+            'vulnerability_color_weight': cls.VULNERABILITY_COLOR_WEIGHT,
+            'vulnerability_energy_weight': cls.VULNERABILITY_ENERGY_WEIGHT,
+            'vulnerability_age_weight': cls.VULNERABILITY_AGE_WEIGHT
         }
     
     @classmethod

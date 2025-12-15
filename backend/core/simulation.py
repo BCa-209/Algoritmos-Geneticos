@@ -5,13 +5,13 @@ import numpy as np
 import random
 import time
 import threading
+import math
 from typing import List, Dict, Tuple, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
 
 from .agents import Bacteria, Phagocyte, Agent
 from .genetic_algorithm import GeneticAlgorithm
-from .fitness import calculate_coevolution_fitness
 from config import SimulationConfig
 
 @dataclass
@@ -52,26 +52,128 @@ class Simulation:
             'generation_times': []
         }
         
+        # Sistema de ranking
+        self.bacteria_rankings = []
+        self.last_ranking_update = 0
+        self.ranking_update_frequency = SimulationConfig.RANKING_UPDATE_FREQUENCY
+        
         # Inicializar poblaciones si están vacías
         if not self.bacteria:
             self.initialize_population()
     
+    # En simulation.py, actualizar el método update_bacteria_rankings
+
+    def update_bacteria_rankings(self):
+        """Actualizar y ordenar lista de bacterias por vulnerabilidad"""
+        # Calcular vulnerabilidad solo para objetos Bacteria
+        vulnerability_scores = []
+        for bacteria in self.bacteria:
+            if bacteria.is_alive() and isinstance(bacteria, Bacteria) and hasattr(bacteria, 'get_vulnerability_score'):
+                try:
+                    score = bacteria.get_vulnerability_score(self.background_color)
+                    vulnerability_scores.append((score, bacteria))
+                except Exception as e:
+                    print(f"Error calculando vulnerabilidad: {e}")
+                    continue
+        
+        # Ordenar por vulnerabilidad descendente (mayor = más vulnerable)
+        vulnerability_scores.sort(key=lambda x: x[0], reverse=True)
+        
+        # Guardar solo las bacterias, sin los scores
+        self.bacteria_rankings = [bacteria for _, bacteria in vulnerability_scores]
+        self.last_ranking_update = self.generation
+        
+        # Registrar estadísticas de ranking
+        if vulnerability_scores:
+            scores = [score for score, _ in vulnerability_scores]
+            if 'ranking_stats' not in self.stats:
+                self.stats['ranking_stats'] = {'max_vulnerability': [], 'avg_vulnerability': []}
+            
+            self.stats['ranking_stats']['max_vulnerability'].append(max(scores))
+            self.stats['ranking_stats']['avg_vulnerability'].append(np.mean(scores))
+            
+            # Mantener historial limitado
+            max_history = 100
+            for key in self.stats['ranking_stats']:
+                if len(self.stats['ranking_stats'][key]) > max_history:
+                    self.stats['ranking_stats'][key].pop(0)
+    
+    def get_ranked_bacteria_in_range(self, phagocyte: Phagocyte, max_distance: float = None) -> List[Bacteria]:
+        """Obtener bacterias rankeadas dentro del rango del fagocito"""
+        if max_distance is None:
+            max_distance = SimulationConfig.DETECTION_RADIUS
+        
+        # Actualizar rankings si es necesario
+        if (self.generation - self.last_ranking_update) >= self.ranking_update_frequency:
+            self.update_bacteria_rankings()
+        
+        # Buscar bacterias rankeadas dentro del rango
+        ranked_in_range = []
+        
+        for bacteria in self.bacteria_rankings:
+            if not bacteria.is_alive():
+                continue
+            
+            # Calcular distancia
+            dx = bacteria.x - phagocyte.x
+            dy = bacteria.y - phagocyte.y
+            dist = math.sqrt(dx**2 + dy**2)
+            
+            # Verificar si está dentro del rango
+            if dist < max_distance:
+                # Verificar si el fagocito puede detectarla
+                if phagocyte.detect_bacteria(bacteria, self.background_color):
+                    ranked_in_range.append((dist, bacteria))
+        
+        # Ordenar por distancia para priorizar las más cercanas entre igualmente vulnerables
+        ranked_in_range.sort(key=lambda x: x[0])
+        
+        return [bacteria for _, bacteria in ranked_in_range]
+    
     def initialize_population(self):
         """Inicializar poblaciones iniciales"""
-        # Crear bacterias iniciales
+        print(f"Inicializando poblaciones con modo spawn: {SimulationConfig.PHAGOCYTE_SPAWN_MODE}")
+        
+        # Crear bacterias iniciales (siempre aleatorias)
         for i in range(SimulationConfig.INITIAL_BACTERIA_COUNT):
             bacteria = Bacteria(id=f"bacteria_{i}")
             bacteria.x = random.uniform(0, self.canvas_width)
             bacteria.y = random.uniform(0, self.canvas_height)
             self.bacteria.append(bacteria)
         
-        # Crear fagocitos iniciales
-        for i in range(SimulationConfig.INITIAL_PHAGOCYTE_COUNT):
-            phagocyte = Phagocyte(id=f"phagocyte_{i}")
-            phagocyte.x = random.uniform(0, self.canvas_width)
-            phagocyte.y = random.uniform(0, self.canvas_height)
-            self.phagocytes.append(phagocyte)
+        # Crear fagocitos iniciales según el modo
+        spawn_mode = SimulationConfig.PHAGOCYTE_SPAWN_MODE
+        
+        if spawn_mode == 'fixed_point':
+            # Calcular punto de spawn relativo al tamaño actual del canvas
+            spawn_x = self.canvas_width * (SimulationConfig.PHAGOCYTE_SPAWN_POINT[0] / SimulationConfig.CANVAS_WIDTH)
+            spawn_y = self.canvas_height * (SimulationConfig.PHAGOCYTE_SPAWN_POINT[1] / SimulationConfig.CANVAS_HEIGHT)
+            
+            print(f"  Punto de spawn fagocitos: ({spawn_x:.0f}, {spawn_y:.0f})")
+            print(f"  Radio de dispersión: {SimulationConfig.PHAGOCYTE_SPAWN_RADIUS}")
+            
+            for i in range(SimulationConfig.INITIAL_PHAGOCYTE_COUNT):
+                phagocyte = Phagocyte(
+                    id=f"phagocyte_{i}",
+                    spawn_point=(spawn_x, spawn_y)  # Pasar punto de spawn
+                )
+                self.phagocytes.append(phagocyte)
+        else:
+            # Modo aleatorio tradicional
+            for i in range(SimulationConfig.INITIAL_PHAGOCYTE_COUNT):
+                phagocyte = Phagocyte(id=f"phagocyte_{i}")
+                phagocyte.x = random.uniform(0, self.canvas_width)
+                phagocyte.y = random.uniform(0, self.canvas_height)
+                self.phagocytes.append(phagocyte)
     
+    def clean_incorrect_agents(self):
+        """Eliminar agentes que no son del tipo correcto"""
+        # Filtrar bacterias que no son Bacteria
+        self.bacteria = [b for b in self.bacteria if isinstance(b, Bacteria)]
+        
+        # Filtrar fagocitos que no son Phagocyte
+        self.phagocytes = [p for p in self.phagocytes if isinstance(p, Phagocyte)]
+            
     def step(self):
         """Ejecutar un paso de simulación (una generación)"""
         if self.is_paused or self.is_stopped:
@@ -100,17 +202,20 @@ class Simulation:
             # 6. Limpiar agentes muertos
             self.clean_dead_agents()
             
-            # 7. Actualizar estadísticas
+            # 7. Limpiar agentes del tipo incorrecto (NUEVO)
+            self.clean_incorrect_agents()
+            
+            # 8. Actualizar estadísticas
             self.update_statistics(start_gen_time)
             
-            # 8. Controlar tamaño de población
+            # 9. Controlar tamaño de población
             self.control_population_size()
             
         except Exception as e:
             print(f"Error en paso de simulación (generación {self.generation}): {e}")
             import traceback
             traceback.print_exc()
-    
+            
     def move_agents(self):
         """Mover todos los agentes en el entorno"""
         # Mover bacterias
@@ -118,55 +223,12 @@ class Simulation:
             if bacteria.is_alive():
                 bacteria.move(self.canvas_width, self.canvas_height)
         
-        # Mover fagocitos
+        # Mover fagocitos con búsqueda inteligente
         for phagocyte in self.phagocytes:
             if phagocyte.is_alive():
-                # Verificar que sea un Phagocyte y tenga los métodos necesarios
-                if hasattr(phagocyte, 'detect_bacteria') and hasattr(phagocyte, 'chase_bacteria'):
-                    try:
-                        # Buscar bacterias cercanas para perseguir
-                        target_bacteria = self.find_nearest_bacteria(phagocyte)
-                        if target_bacteria:
-                            phagocyte.chase_bacteria(target_bacteria)
-                    except Exception as e:
-                        print(f"Error persiguiendo bacterias: {e}")
-                        # Continuar con el movimiento incluso si hay error
-                
-                phagocyte.move(self.canvas_width, self.canvas_height)
-    
-    def find_nearest_bacteria(self, phagocyte: Phagocyte, 
-                            max_distance: float = None) -> Optional[Bacteria]:
-        """Encontrar bacteria más cercana detectable"""
-        if max_distance is None:
-            max_distance = SimulationConfig.DETECTION_RADIUS
-        
-        # Verificar que el fagocito tenga el método detect_bacteria
-        if not hasattr(phagocyte, 'detect_bacteria'):
-            return None
-        
-        nearest = None
-        min_dist = float('inf')
-        
-        for bacteria in self.bacteria:
-            if not bacteria.is_alive():
-                continue
-            
-            # Calcular distancia
-            dx = bacteria.x - phagocyte.x
-            dy = bacteria.y - phagocyte.y
-            dist = np.sqrt(dx**2 + dy**2)
-            
-            # Verificar si está dentro del rango y es detectable
-            if dist < max_distance and dist < min_dist:
-                try:
-                    if phagocyte.detect_bacteria(bacteria, self.background_color):
-                        nearest = bacteria
-                        min_dist = dist
-                except Exception as e:
-                    print(f"Error detectando bacteria: {e}")
-                    continue
-        
-        return nearest
+                # Pasar referencia a la simulación para acceso a rankings
+                if hasattr(phagocyte, 'move'):
+                    phagocyte.move(self.canvas_width, self.canvas_height, self)
     
     def process_interactions(self):
         """Procesar interacciones entre agentes"""
@@ -293,22 +355,55 @@ class Simulation:
         if len(self.stats['generation_times']) > 100:
             self.stats['generation_times'].pop(0)
         
-        # Calcular fitness
-        if self.bacteria:
+        # Filtrar solo objetos Bacteria reales
+        real_bacteria = [b for b in self.bacteria if isinstance(b, Bacteria)]
+        
+        # Calcular fitness para bacterias reales
+        if real_bacteria:
             try:
-                bact_fitness = [b.fitness for b in self.bacteria]
+                bact_fitness = [b.fitness for b in real_bacteria]
                 self.stats['max_fitness_history']['bacteria'].append(max(bact_fitness))
                 self.stats['avg_fitness_history']['bacteria'].append(np.mean(bact_fitness))
-            except:
+                
+                # Calcular vulnerabilidad promedio solo para Bacteria reales
+                vulnerabilities = []
+                for b in real_bacteria:
+                    if hasattr(b, 'get_vulnerability_score'):
+                        try:
+                            vulnerabilities.append(b.get_vulnerability_score(self.background_color))
+                        except Exception as e:
+                            print(f"Error calculando vulnerabilidad en stats: {e}")
+                            continue
+                
+                if vulnerabilities:
+                    if 'vulnerability_stats' not in self.stats:
+                        self.stats['vulnerability_stats'] = {'avg': [], 'max': [], 'min': []}
+                    
+                    self.stats['vulnerability_stats']['avg'].append(np.mean(vulnerabilities))
+                    self.stats['vulnerability_stats']['max'].append(max(vulnerabilities))
+                    self.stats['vulnerability_stats']['min'].append(min(vulnerabilities))
+                    
+                    # Mantener historial limitado
+                    max_history = 100
+                    for key in ['avg', 'max', 'min']:
+                        if len(self.stats['vulnerability_stats'][key]) > max_history:
+                            self.stats['vulnerability_stats'][key].pop(0)
+                            
+            except Exception as e:
+                print(f"Error calculando estadísticas de bacteria: {e}")
                 self.stats['max_fitness_history']['bacteria'].append(0.0)
                 self.stats['avg_fitness_history']['bacteria'].append(0.0)
         else:
             self.stats['max_fitness_history']['bacteria'].append(0.0)
             self.stats['avg_fitness_history']['bacteria'].append(0.0)
         
-        if self.phagocytes:
+        # Filtrar solo objetos Phagocyte reales
+        real_phagocytes = [p for p in self.phagocytes if isinstance(p, Phagocyte)]
+        
+        # Calcular fitness para fagocitos reales
+        if real_phagocytes:
             try:
-                phag_fitness = [p.fitness for p in self.phagocytes]
+                phag_fitness = [p.fitness for p in real_phagocytes]
                 self.stats['max_fitness_history']['phagocytes'].append(max(phag_fitness))
                 self.stats['avg_fitness_history']['phagocytes'].append(np.mean(phag_fitness))
             except:
@@ -319,8 +414,8 @@ class Simulation:
             self.stats['avg_fitness_history']['phagocytes'].append(0.0)
         
         # Actualizar poblaciones
-        self.stats['population_history']['bacteria'].append(len(self.bacteria))
-        self.stats['population_history']['phagocytes'].append(len(self.phagocytes))
+        self.stats['population_history']['bacteria'].append(len(real_bacteria))
+        self.stats['population_history']['phagocytes'].append(len(real_phagocytes))
         
         # Mantener historial limitado
         max_history = 100
@@ -332,6 +427,10 @@ class Simulation:
             if len(self.stats['population_history'][key]) > max_history:
                 self.stats['population_history'][key].pop(0)
     
+
+
+
+
     def control_population_size(self):
         """Controlar tamaño de población para evitar explosión"""
         max_pop = SimulationConfig.MAX_POPULATION
@@ -367,6 +466,18 @@ class Simulation:
         if 'max_generations' in parameters:
             self.max_generations = int(parameters['max_generations'])
         
+        # Actualizar sistema de spawn
+        if 'phagocyte_spawn_mode' in parameters:
+            SimulationConfig.PHAGOCYTE_SPAWN_MODE = parameters['phagocyte_spawn_mode']
+        if 'phagocyte_spawn_point' in parameters:
+            SimulationConfig.PHAGOCYTE_SPAWN_POINT = tuple(parameters['phagocyte_spawn_point'])
+        if 'phagocyte_spawn_radius' in parameters:
+            SimulationConfig.PHAGOCYTE_SPAWN_RADIUS = float(parameters['phagocyte_spawn_radius'])
+        
+        # Actualizar sistema de ranking
+        if 'ranking_update_frequency' in parameters:
+            self.ranking_update_frequency = int(parameters['ranking_update_frequency'])
+        
         # Actualizar algoritmo genético
         ga_params = {}
         if 'mutation_rate' in parameters:
@@ -379,42 +490,49 @@ class Simulation:
         if ga_params:
             self.ga.update_parameters(**ga_params)
     
+    # En simulation.py, corregir el método get_simulation_state (línea ~547)
+
     def get_simulation_state(self) -> Dict[str, Any]:
         """Obtener estado completo de simulación para enviar al cliente"""
         # Limitar número de agentes para optimizar transferencia
         max_bacteria_show = 200
         max_phagocytes_show = 50
         
-        # Seleccionar agentes para mostrar
-        bacteria_to_show = self.bacteria[:max_bacteria_show]
-        phagocytes_to_show = self.phagocytes[:max_phagocytes_show]
+        # Seleccionar agentes para mostrar - AÑADIR FILTRO POR TIPO
+        bacteria_to_show = [b for b in self.bacteria if isinstance(b, Bacteria)][:max_bacteria_show]
+        phagocytes_to_show = [p for p in self.phagocytes if isinstance(p, Phagocyte)][:max_phagocytes_show]
         
         # Si hay muchos agentes, muestrear aleatoriamente
-        if len(self.bacteria) > max_bacteria_show:
-            bacteria_to_show = random.sample(self.bacteria, max_bacteria_show)
+        if len([b for b in self.bacteria if isinstance(b, Bacteria)]) > max_bacteria_show:
+            real_bacteria = [b for b in self.bacteria if isinstance(b, Bacteria)]
+            bacteria_to_show = random.sample(real_bacteria, max_bacteria_show)
         
-        if len(self.phagocytes) > max_phagocytes_show:
-            phagocytes_to_show = random.sample(self.phagocytes, max_phagocytes_show)
+        if len([p for p in self.phagocytes if isinstance(p, Phagocyte)]) > max_phagocytes_show:
+            real_phagocytes = [p for p in self.phagocytes if isinstance(p, Phagocyte)]
+            phagocytes_to_show = random.sample(real_phagocytes, max_phagocytes_show)
         
         # Convertir bacterias a diccionario
         bacteria_data = []
         for b in bacteria_to_show:
             try:
-                bacteria_data.append({
-                    'id': b.id,
-                    'x': b.x,
-                    'y': b.y,
-                    'color': b.color,
-                    'fitness': b.fitness,
-                    'energy': b.energy,
-                    'age': b.age,
-                    'genome': b.genome,
-                    'vx': getattr(b, 'vx', 0),
-                    'vy': getattr(b, 'vy', 0),
-                    'direction': getattr(b, 'direction', 0),
-                    'length_gene': b.genome.get('length_gene', 0.5),
-                    'width_gene': b.genome.get('width_gene', 0.5)
-                })
+                # Asegurarnos de que sea una Bacteria y tenga el método
+                if isinstance(b, Bacteria) and hasattr(b, 'get_vulnerability_score'):
+                    bacteria_data.append({
+                        'id': b.id,
+                        'x': b.x,
+                        'y': b.y,
+                        'color': b.color,
+                        'fitness': b.fitness,
+                        'energy': b.energy,
+                        'age': b.age,
+                        'genome': b.genome,
+                        'vx': getattr(b, 'vx', 0),
+                        'vy': getattr(b, 'vy', 0),
+                        'direction': getattr(b, 'direction', 0),
+                        'length_gene': b.genome.get('length_gene', 0.5),
+                        'width_gene': b.genome.get('width_gene', 0.5),
+                        'vulnerability': b.get_vulnerability_score(self.background_color)
+                    })
             except Exception as e:
                 print(f"Error serializando bacteria: {e}")
                 continue
@@ -423,22 +541,28 @@ class Simulation:
         phagocytes_data = []
         for p in phagocytes_to_show:
             try:
-                phagocytes_data.append({
-                    'id': p.id,
-                    'x': p.x,
-                    'y': p.y,
-                    'color': p.color,
-                    'fitness': p.fitness,
-                    'energy': p.energy,
-                    'age': p.age,
-                    'genome': p.genome,
-                    'vx': getattr(p, 'vx', 0),
-                    'vy': getattr(p, 'vy', 0),
-                    'aggression_gene': p.genome.get('aggression_gene', 0.5)
-                })
+                if isinstance(p, Phagocyte):
+                    phagocytes_data.append({
+                        'id': p.id,
+                        'x': p.x,
+                        'y': p.y,
+                        'color': p.color,
+                        'fitness': p.fitness,
+                        'energy': p.energy,
+                        'age': p.age,
+                        'genome': p.genome,
+                        'vx': getattr(p, 'vx', 0),
+                        'vy': getattr(p, 'vy', 0),
+                        'aggression_gene': p.genome.get('aggression_gene', 0.5),
+                        'sensitivity_gene': p.genome.get('sensitivity_gene', 0.5)
+                    })
             except Exception as e:
                 print(f"Error serializando fagocito: {e}")
                 continue
+        
+        # Calcular estadísticas solo para objetos del tipo correcto
+        real_bacteria = [b for b in self.bacteria if isinstance(b, Bacteria)]
+        real_phagocytes = [p for p in self.phagocytes if isinstance(p, Phagocyte)]
         
         return {
             'generation': self.generation,
@@ -449,21 +573,26 @@ class Simulation:
             },
             'stats': {
                 'populations': {
-                    'bacteria': len(self.bacteria),
-                    'phagocytes': len(self.phagocytes)
+                    'bacteria': len(real_bacteria),
+                    'phagocytes': len(real_phagocytes)
                 },
                 'fitness': {
                     'bacteria': {
-                        'max': max([b.fitness for b in self.bacteria]) if self.bacteria else 0.0,
-                        'avg': np.mean([b.fitness for b in self.bacteria]) if self.bacteria else 0.0,
-                        'min': min([b.fitness for b in self.bacteria]) if self.bacteria else 0.0
+                        'max': max([b.fitness for b in real_bacteria]) if real_bacteria else 0.0,
+                        'avg': np.mean([b.fitness for b in real_bacteria]) if real_bacteria else 0.0,
+                        'min': min([b.fitness for b in real_bacteria]) if real_bacteria else 0.0
                     },
                     'phagocytes': {
-                        'max': max([p.fitness for p in self.phagocytes]) if self.phagocytes else 0.0,
-                        'avg': np.mean([p.fitness for p in self.phagocytes]) if self.phagocytes else 0.0,
-                        'min': min([p.fitness for p in self.phagocytes]) if self.phagocytes else 0.0
+                        'max': max([p.fitness for p in real_phagocytes]) if real_phagocytes else 0.0,
+                        'avg': np.mean([p.fitness for p in real_phagocytes]) if real_phagocytes else 0.0,
+                        'min': min([p.fitness for p in real_phagocytes]) if real_phagocytes else 0.0
                     }
                 },
+                'vulnerability': {
+                    'max': max([b.get_vulnerability_score(self.background_color) for b in real_bacteria]) if real_bacteria else 0.0,
+                    'avg': np.mean([b.get_vulnerability_score(self.background_color) for b in real_bacteria]) if real_bacteria else 0.0,
+                    'min': min([b.get_vulnerability_score(self.background_color) for b in real_bacteria]) if real_bacteria else 0.0
+                } if real_bacteria else {'max': 0.0, 'avg': 0.0, 'min': 0.0},
                 'captures': self.stats['total_captures'],
                 'reproductions': self.stats['total_reproductions']
             },
@@ -485,6 +614,10 @@ class Simulation:
             'mutation_rate': self.ga.mutation_rate,
             'crossover_rate': self.ga.crossover_rate,
             'mutation_strength': self.ga.mutation_strength,
+            'phagocyte_spawn_mode': SimulationConfig.PHAGOCYTE_SPAWN_MODE,
+            'phagocyte_spawn_point': SimulationConfig.PHAGOCYTE_SPAWN_POINT,
+            'phagocyte_spawn_radius': SimulationConfig.PHAGOCYTE_SPAWN_RADIUS,
+            'ranking_update_frequency': self.ranking_update_frequency,
             'current_generation': self.generation,
             'bacteria_count': len(self.bacteria),
             'phagocyte_count': len(self.phagocytes)
@@ -494,7 +627,7 @@ class Simulation:
         """Obtener estadísticas detalladas"""
         current_time = time.time()
         
-        return {
+        stats = {
             'summary': {
                 'total_generations': self.generation,
                 'total_captures': self.stats['total_captures'],
@@ -516,6 +649,16 @@ class Simulation:
                 'generation_times': self.stats['generation_times'][-10:] if self.stats['generation_times'] else []
             }
         }
+        
+        # Agregar estadísticas de vulnerabilidad si existen
+        if 'vulnerability_stats' in self.stats:
+            stats['vulnerability_history'] = self.stats['vulnerability_stats']
+        
+        # Agregar estadísticas de ranking si existen
+        if 'ranking_stats' in self.stats:
+            stats['ranking_history'] = self.stats['ranking_stats']
+        
+        return stats
     
     def get_best_fitness(self) -> Dict[str, float]:
         """Obtener mejor fitness de cada especie"""
@@ -542,7 +685,12 @@ class Simulation:
                 'phagocytes': len(self.phagocytes)
             },
             'run_time': time.time() - self.start_time,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'ranking_info': {
+                'last_update': self.last_ranking_update,
+                'current_ranking_size': len(self.bacteria_rankings),
+                'update_frequency': self.ranking_update_frequency
+            }
         }
     
     def pause(self):
@@ -568,6 +716,10 @@ class Simulation:
             'interaction_history': [],
             'generation_times': []
         }
+        
+        # Reiniciar sistema de ranking
+        self.bacteria_rankings = []
+        self.last_ranking_update = 0
         
         # Reiniciar poblaciones
         self.bacteria = []

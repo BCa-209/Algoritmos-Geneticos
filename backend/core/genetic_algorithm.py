@@ -11,16 +11,16 @@ class GeneticAlgorithm:
     """Algoritmo genético para evolución de agentes"""
     
     def __init__(self, mutation_rate: float = None, 
-                 crossover_rate: float = None,
-                 mutation_strength: float = None):
+                crossover_rate: float = None,
+                mutation_strength: float = None):
         """Inicializar algoritmo genético"""
         self.mutation_rate = mutation_rate or SimulationConfig.MUTATION_RATE
         self.crossover_rate = crossover_rate or SimulationConfig.CROSSOVER_RATE
         self.mutation_strength = mutation_strength or SimulationConfig.MUTATION_STRENGTH
         
     def selection(self, agents: List[Agent], 
-                  selection_type: str = 'tournament',
-                  tournament_size: int = 3) -> List[Agent]:
+                selection_type: str = 'tournament',
+                tournament_size: int = 3) -> List[Agent]:
         """Selección de padres basada en aptitud"""
         if not agents:
             return []
@@ -91,9 +91,11 @@ class GeneticAlgorithm:
         
         return mutated_genome
     
+    # En genetic_algorithm.py, corregir el método create_new_generation
+
     def create_new_generation(self, agents: List[Agent], 
-                             target_size: int,
-                             elitism: int = 2) -> List[Agent]:
+                            target_size: int,
+                            elitism: int = 2) -> List[Agent]:
         """Crear nueva generación de agentes"""
         if not agents:
             return []
@@ -126,13 +128,31 @@ class GeneticAlgorithm:
             child1_genome = self.mutate(child1_genome)
             child2_genome = self.mutate(child2_genome)
             
-            # Crear nuevos agentes - IMPORTANTE: verificar el tipo correcto
+            # Crear nuevos agentes - CORREGIDO: usar las clases correctas
             if parent1.species == 'bacteria':
+                # IMPORTANTE: Usar Bacteria() no Agent()
                 child1 = Bacteria(genome=child1_genome)
                 child2 = Bacteria(genome=child2_genome)
-            else:
+            elif parent1.species == 'phagocyte':
+                # IMPORTANTE: Usar Phagocyte() no Agent()
                 child1 = Phagocyte(genome=child1_genome)
                 child2 = Phagocyte(genome=child2_genome)
+            else:
+                # Fallback a Agent si no se reconoce la especie
+                child1 = Agent(
+                    id=f"{parent1.species}_{len(new_generation)}",
+                    species=parent1.species,
+                    x=0, y=0,
+                    genome=child1_genome,
+                    color=(128, 128, 128)
+                )
+                child2 = Agent(
+                    id=f"{parent1.species}_{len(new_generation)+1}",
+                    species=parent1.species,
+                    x=0, y=0,
+                    genome=child2_genome,
+                    color=(128, 128, 128)
+                )
             
             # Asignar IDs únicos
             child1.id = f"{child1.species}_{len(new_generation)}"
@@ -145,8 +165,8 @@ class GeneticAlgorithm:
         return new_generation
     
     def evolve_population(self, bacteria: List[Bacteria], 
-                         phagocytes: List[Phagocyte],
-                         background_color: Tuple[int, int, int]) -> Tuple[List[Bacteria], List[Phagocyte]]:
+                        phagocytes: List[Phagocyte],
+                        background_color: Tuple[int, int, int]) -> Tuple[List[Bacteria], List[Phagocyte]]:
         """Evolucionar ambas poblaciones de forma coevolutiva"""
         
         # Calcular fitness para bacterias (basado en camuflaje)
@@ -171,8 +191,8 @@ class GeneticAlgorithm:
         return new_bacteria, new_phagocytes
     
     def update_parameters(self, mutation_rate: float = None,
-                         crossover_rate: float = None,
-                         mutation_strength: float = None):
+                        crossover_rate: float = None,
+                        mutation_strength: float = None):
         """Actualizar parámetros del algoritmo genético"""
         if mutation_rate is not None:
             self.mutation_rate = max(0.0, min(1.0, mutation_rate))

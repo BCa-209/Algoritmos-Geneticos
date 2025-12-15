@@ -137,6 +137,10 @@ class Agent:
     def detect_bacteria(self, bacteria: 'Bacteria', background_color: Tuple[int, int, int]) -> bool:
         """Método por defecto para detectar bacterias (debe ser sobrescrito por Phagocyte)"""
         raise NotImplementedError("Este método debe ser implementado por subclases")
+    
+    def get_vulnerability_score(self, background_color: Tuple[int, int, int]) -> float:
+        """Método por defecto para obtener puntaje de vulnerabilidad (debe ser sobrescrito por Bacteria)"""
+        raise NotImplementedError("Este método debe ser implementado por subclases")
 
 
 class Bacteria(Agent):
@@ -222,6 +226,45 @@ class Bacteria(Agent):
         energy_bonus = self.energy / 200.0
         self.fitness = 0.7 * self.fitness + 0.3 * energy_bonus
     
+    def calculate_vulnerability(self, background_color: Tuple[int, int, int]) -> float:
+        """Calcular vulnerabilidad basada en diferencia de color (inverso del fitness de camuflaje)"""
+        # Calcular diferencia de color con fondo
+        bg_r, bg_g, bg_b = background_color
+        r, g, b = self.color
+        
+        color_diff = math.sqrt(
+            ((r - bg_r) / 255) ** 2 +
+            ((g - bg_g) / 255) ** 2 +
+            ((b - bg_b) / 255) ** 2
+        ) / math.sqrt(3)
+        
+        # Vulnerabilidad = diferencia de color (1.0 = muy visible, 0.0 = invisible)
+        return color_diff
+    
+    def get_vulnerability_score(self, background_color: Tuple[int, int, int]) -> float:
+        """Obtener puntaje de vulnerabilidad completo (incluye energía y edad)"""
+        color_vulnerability = self.calculate_vulnerability(background_color)
+        
+        # Usar parámetros configurables
+        color_weight = SimulationConfig.VULNERABILITY_COLOR_WEIGHT
+        energy_weight = SimulationConfig.VULNERABILITY_ENERGY_WEIGHT
+        age_weight = SimulationConfig.VULNERABILITY_AGE_WEIGHT
+        
+        # Ajustar por energía: bacterias con baja energía son más lentas/fáciles de cazar
+        energy_factor = 1.0 - (self.energy / 200.0)  # 1.0 cuando energía baja
+        
+        # Ajustar por edad: bacterias viejas pueden ser más lentas
+        age_factor = min(1.0, self.age / 500.0)  # Más vulnerable cuando es vieja
+        
+        # Puntaje compuesto de vulnerabilidad usando pesos configurables
+        vulnerability_score = (
+            color_weight * color_vulnerability +  # Peso configurable para color
+            energy_weight * energy_factor +       # Peso configurable para energía
+            age_weight * age_factor              # Peso configurable para edad
+        )
+        
+        return min(1.0, max(0.0, vulnerability_score))
+    
     def reproduce(self) -> Optional['Bacteria']:
         """Reproducción asexual (si tiene suficiente energía)"""
         if self.energy > 150:
@@ -288,15 +331,50 @@ class Phagocyte(Agent):
     def __init__(self, id: str = None,
                  x: float = None,
                  y: float = None,
-                 genome: Dict[str, float] = None):
-        """Inicializar fagocito"""
-        # Valores por defecto
+                 genome: Dict[str, float] = None,
+                 spawn_point: Tuple[float, float] = None):
+        """Inicializar fagocito con punto de aparición"""
+        
+        # Determinar posición de aparición
+        if x is None or y is None:
+            spawn_mode = SimulationConfig.PHAGOCYTE_SPAWN_MODE
+            
+            if spawn_mode == 'fixed_point':
+                # Usar punto de spawn personalizado o el predeterminado
+                if spawn_point is not None:
+                    center_x, center_y = spawn_point
+                else:
+                    center_x = SimulationConfig.PHAGOCYTE_SPAWN_POINT[0]
+                    center_y = SimulationConfig.PHAGOCYTE_SPAWN_POINT[1]
+                
+                radius = SimulationConfig.PHAGOCYTE_SPAWN_RADIUS
+                
+                # Crear posición aleatoria dentro del radio
+                angle = random.uniform(0, 2 * math.pi)
+                distance = random.uniform(0, radius)
+                
+                x = center_x + distance * math.cos(angle)
+                y = center_y + distance * math.sin(angle)
+                
+                # Dirección inicial aleatoria lejos del centro
+                direction_away = angle + random.uniform(-0.5, 0.5)
+                self.vx = math.cos(direction_away)
+                self.vy = math.sin(direction_away)
+                self.normalize_velocity()
+                
+                print(f"Fagocito creado en posición fija: ({x:.1f}, {y:.1f})")
+            else:
+                # Modo aleatorio tradicional
+                x = random.uniform(0, SimulationConfig.CANVAS_WIDTH)
+                y = random.uniform(0, SimulationConfig.CANVAS_HEIGHT)
+        
+        # Valores por defecto del genoma
         if genome is None:
             genome = {
                 'sensitivity_gene': random.random(),
                 'speed_gene': random.random(),
                 'vision_gene': random.random(),
-                'aggression_gene': random.random()  # Nuevo gen
+                'aggression_gene': random.random()
             }
         
         # Color basado en genes de agresividad y sensibilidad
@@ -310,15 +388,10 @@ class Phagocyte(Agent):
             int(200 - 100 * aggression)       # Azul inverso a agresividad
         )
         
-        # Posición aleatoria si no se especifica
-        if x is None:
-            x = random.uniform(0, SimulationConfig.CANVAS_WIDTH)
-        if y is None:
-            y = random.uniform(0, SimulationConfig.CANVAS_HEIGHT)
-        
         if id is None:
             id = f"phagocyte_{random.randint(1000, 9999)}"
         
+        # Inicializar clase base
         super().__init__(
             id=id,
             species='phagocyte',
@@ -327,6 +400,12 @@ class Phagocyte(Agent):
             genome=genome,
             color=color
         )
+        
+        # Asegurar que la velocidad esté inicializada si no se estableció arriba
+        if not hasattr(self, 'vx') or not hasattr(self, 'vy'):
+            self.vx = random.uniform(-1, 1)
+            self.vy = random.uniform(-1, 1)
+            self.normalize_velocity()
     
     def calculate_fitness(self, background_color: Tuple[int, int, int],
                          bacteria_list: List[Bacteria] = None):
@@ -364,11 +443,49 @@ class Phagocyte(Agent):
             ((bact_b - bg_b) / 255) ** 2
         ) / math.sqrt(3)
         
-        # El fagocito detecta si la diferencia de color > umbral de sensibilidad
-        # Fagocitos más agresivos tienen umbral más bajo (detectan mejor)
-        detection_threshold = 1.0 - (sensitivity * (0.7 + 0.3 * aggression))
-        return color_diff > detection_threshold
+        # Obtener fitness de camuflaje de la bacteria
+        bacteria_fitness = bacteria.fitness  # Este ya incluye el cálculo de camuflaje
+        
+        # El fagocito detecta si la diferencia de color > umbral ajustado por camuflaje
+        # Las bacterias con alto fitness de camuflaje son más difíciles de detectar
+        camouflage_effect = 1.0 - bacteria_fitness  # Inverso del fitness
+        
+        # Umbral de detección: fagocitos más sensibles y agresivos tienen mejor detección
+        base_threshold = 1.0 - (sensitivity * (0.7 + 0.3 * aggression))
+        
+        # Ajustar umbral con el efecto de camuflaje de la bacteria
+        # Cuando bacteria_fitness es alto (buen camuflaje), el umbral aumenta (más difícil detectar)
+        adjusted_threshold = base_threshold * (0.5 + 0.5 * camouflage_effect)
+        
+        return color_diff > adjusted_threshold
     
+    def find_target_bacteria(self, simulation) -> Optional[Bacteria]:
+        """Buscar bacteria objetivo usando sistema de ranking"""
+        # Obtener bacterias rankeadas dentro del rango
+        ranked_bacteria = simulation.get_ranked_bacteria_in_range(self)
+        
+        if not ranked_bacteria:
+            return None
+        
+        # La primera bacteria en la lista es la más vulnerable dentro del rango
+        return ranked_bacteria[0]
+    
+    def move(self, canvas_width: int, canvas_height: int, simulation=None):
+        """Mover fagocito con búsqueda inteligente"""
+        if simulation and hasattr(self, 'find_target_bacteria'):
+            # Buscar bacteria objetivo usando ranking
+            target_bacteria = self.find_target_bacteria(simulation)
+            
+            if target_bacteria:
+                # Perseguir la bacteria objetivo
+                self.chase_bacteria(target_bacteria)
+            else:
+                # Si no hay objetivos, movimiento aleatorio
+                super().move(canvas_width, canvas_height)
+        else:
+            # Movimiento base si no hay simulación o método no disponible
+            super().move(canvas_width, canvas_height)
+
     def chase_bacteria(self, bacteria: Bacteria):
         """Perseguir bacteria detectada"""
         # Calcular dirección hacia la bacteria
