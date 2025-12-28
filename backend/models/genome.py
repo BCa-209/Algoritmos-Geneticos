@@ -1,76 +1,44 @@
 """
-Representación del genoma de un agente
+Representación simplificada del genoma compatible con DEAP
 """
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Any
 import random
 import numpy as np
+from typing import Dict, List, Tuple, Any
 
-@dataclass
 class Genome:
-    """Representación del genoma de un agente"""
+    """Representación del genoma de un agente - VERSIÓN SIMPLIFICADA"""
     
-    genes: Dict[str, float] = field(default_factory=dict)
-    species: str = "unknown"
-    
-    def __post_init__(self):
-        """Inicializar genoma por defecto según especie"""
+    def __init__(self, genes: Dict[str, float] = None, species: str = "unknown"):
+        self.genes = genes or {}
+        self.species = species
+        
+        # Inicializar genoma por defecto según especie
         if not self.genes:
-            if self.species == "bacteria":
-                self.genes = {
-                    'color_gene': random.random(),
-                    'length_gene': random.random(),  # Nueva: gen de longitud
-                    'width_gene': random.random(),   # Nueva: gen de grosor
-                    'reproduction_rate': random.random(),
-                    'metabolism': random.random()
-                }
-            elif self.species == "phagocyte":
-                self.genes = {
-                    'sensitivity_gene': random.random(),
-                    'speed_gene': random.random(),
-                    'vision_gene': random.random(),
-                    'aggression_gene': random.random(),  # Nuevo gen
-                    'endurance_gene': random.random()
-                }
+            self._initialize_default_genome()
+    
+    def _initialize_default_genome(self):
+        """Inicializar genoma por defecto según especie"""
+        if self.species == "bacteria":
+            self.genes = {
+                'color_gene': random.random(),
+                'length_gene': random.random(),
+                'width_gene': random.random(),
+                'reproduction_rate': random.random(),
+                'metabolism': random.random()
+            }
+        elif self.species == "phagocyte":
+            self.genes = {
+                'sensitivity_gene': random.random(),
+                'speed_gene': random.random(),
+                'vision_gene': random.random(),
+                'aggression_gene': random.random(),
+                'endurance_gene': random.random()
+            }
     
     @classmethod
     def create_random(cls, species: str) -> 'Genome':
         """Crear genoma aleatorio para especie dada"""
-        genome = cls(species=species)
-        return genome
-    
-    @classmethod
-    def crossover(cls, parent1: 'Genome', parent2: 'Genome') -> Tuple['Genome', 'Genome']:
-        """Cruce de dos genomas padres"""
-        if parent1.species != parent2.species:
-            raise ValueError("Los genomas deben ser de la misma especie")
-        
-        child1_genes = {}
-        child2_genes = {}
-        
-        for gene_name in parent1.genes.keys():
-            if gene_name in parent2.genes:
-                # Intercambiar genes con probabilidad 50%
-                if random.random() < 0.5:
-                    child1_genes[gene_name] = parent2.genes[gene_name]
-                    child2_genes[gene_name] = parent1.genes[gene_name]
-                else:
-                    child1_genes[gene_name] = parent1.genes[gene_name]
-                    child2_genes[gene_name] = parent2.genes[gene_name]
-            else:
-                child1_genes[gene_name] = parent1.genes[gene_name]
-        
-        # Agregar genes únicos del padre 2
-        for gene_name in parent2.genes.keys():
-            if gene_name not in child1_genes:
-                child1_genes[gene_name] = parent2.genes[gene_name]
-            if gene_name not in child2_genes:
-                child2_genes[gene_name] = parent2.genes[gene_name]
-        
-        return (
-            cls(genes=child1_genes, species=parent1.species),
-            cls(genes=child2_genes, species=parent1.species)
-        )
+        return cls(species=species)
     
     def mutate(self, mutation_rate: float = 0.01, 
                mutation_strength: float = 0.1) -> 'Genome':
@@ -107,5 +75,5 @@ class Genome:
         }
     
     def copy(self) -> 'Genome':
-        return Genome(genes=self.genes.copy(), species=self.species)
         """Crear copia del genoma"""
+        return Genome(genes=self.genes.copy(), species=self.species)

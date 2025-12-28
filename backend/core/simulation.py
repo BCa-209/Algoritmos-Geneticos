@@ -10,8 +10,8 @@ from typing import List, Dict, Tuple, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
 
-from .agents import Bacteria, Phagocyte, Agent
-from .genetic_algorithm import GeneticAlgorithm
+from .agents import Bacteria, Phagocyte, Agent, Glucose
+from .genetic_algorithm import GeneticAlgorithmDEAP as GeneticAlgorithm
 from config import SimulationConfig
 
 @dataclass
@@ -27,6 +27,7 @@ class Simulation:
     # Poblaciones
     bacteria: List[Bacteria] = field(default_factory=list)
     phagocytes: List[Phagocyte] = field(default_factory=list)
+    glucose: List[Glucose] = field(default_factory=list)
     
     # Algoritmo genético
     ga: GeneticAlgorithm = field(default_factory=GeneticAlgorithm)
@@ -45,9 +46,10 @@ class Simulation:
         self.stats = {
             'total_captures': 0,
             'total_reproductions': 0,
+            'glucose_consumed': 0,
             'max_fitness_history': {'bacteria': [], 'phagocytes': []},
             'avg_fitness_history': {'bacteria': [], 'phagocytes': []},
-            'population_history': {'bacteria': [], 'phagocytes': []},
+            'population_history': {'bacteria': [], 'phagocytes': [], 'glucose': []},
             'interaction_history': [],
             'generation_times': []
         }
@@ -57,6 +59,8 @@ class Simulation:
         self.last_ranking_update = 0
         self.ranking_update_frequency = SimulationConfig.RANKING_UPDATE_FREQUENCY
         
+        if not self.glucose:
+            self.initialize_glucose()
         # Inicializar poblaciones si están vacías
         if not self.bacteria:
             self.initialize_population()
@@ -165,6 +169,29 @@ class Simulation:
                 phagocyte.x = random.uniform(0, self.canvas_width)
                 phagocyte.y = random.uniform(0, self.canvas_height)
                 self.phagocytes.append(phagocyte)
+
+    def initialize_glucose(self):
+        """Inicializar glucosas iniciales"""
+        for i in range(SimulationConfig.INITIAL_GLUCOSE_COUNT):
+            glucose = Glucose(id=f"glucose_{i}")
+            self.glucose.append(glucose)
+        
+        print(f"Inicializadas {len(self.glucose)} glucosas")
+    
+    # Añadir nuevo método para manejar glucosas
+    def manage_glucose(self):
+        """Gestionar ciclo de vida de glucosas"""
+        # Eliminar glucosas consumidas
+        active_glucose = [g for g in self.glucose if g.is_active()]
+        self.glucose = active_glucose
+        
+        # Spawnear nuevas glucosas si es necesario
+        if (len(self.glucose) < SimulationConfig.GLUCOSE_RESPAWN_THRESHOLD and 
+            random.random() < SimulationConfig.GLUCOSE_SPAWN_RATE and
+            len(self.glucose) < SimulationConfig.MAX_GLUCOSE_COUNT):
+            
+            new_glucose = Glucose()
+            self.glucose.append(new_glucose)
     
     def clean_incorrect_agents(self):
         """Eliminar agentes que no son del tipo correcto"""
@@ -185,15 +212,21 @@ class Simulation:
         try:
             # 1. Mover todos los agentes
             self.move_agents()
+
+            # 1b. Actualizar cooldowns de reproducción (NUEVO)
+            self.update_reproduction_cooldowns()
             
             # 2. Procesar interacciones
             self.process_interactions()
+            
+            # 2b. Gestionar glucosas
+            self.manage_glucose()
             
             # 3. Calcular fitness
             self.calculate_fitness()
             
             # 4. Reproducción natural
-            self.natural_reproduction()
+            self.asexual_reproduction()
             
             # 5. Evolución coevolutiva (cada ciertas generaciones)
             if self.generation % SimulationConfig.GENERATIONS_PER_EPOCH == 0:
@@ -229,10 +262,17 @@ class Simulation:
                 # Pasar referencia a la simulación para acceso a rankings
                 if hasattr(phagocyte, 'move'):
                     phagocyte.move(self.canvas_width, self.canvas_height, self)
+
+    def update_reproduction_cooldowns(self):
+        """Actualizar tiempos de enfriamiento para reproducción"""
+        for bacteria in self.bacteria:
+            if isinstance(bacteria, Bacteria) and hasattr(bacteria, 'update_reproduction_cooldown'):
+                bacteria.update_reproduction_cooldown()
     
     def process_interactions(self):
         """Procesar interacciones entre agentes"""
         captures = 0
+        glucose_consumed = 0
         
         # Para cada fagocito, verificar capturas
         for phagocyte in self.phagocytes:
@@ -256,6 +296,40 @@ class Simulation:
                 except Exception as e:
                     print(f"Error capturando bacteria: {e}")
                     continue
+        
+        for bacteria in self.bacteria:
+            if not bacteria.is_alive():
+                continue
+            
+            # Buscar glucosas cercanas
+            for glucose in self.glucose[:]:  # Copia para modificar
+                if not glucose.is_active():
+                    continue
+                
+                # Calcular distancia
+                dx = bacteria.x - glucose.x
+                dy = bacteria.y - glucose.y
+                dist = math.sqrt(dx**2 + dy**2)
+                
+                # Radio de consumo (tamaño de bacteria + tamaño de glucosa)
+                consumption_radius = SimulationConfig.AGENT_SIZE + (glucose.size / 2)
+                
+                if dist < consumption_radius:
+                    # Bacteria consume glucosa
+                    energy_gained = glucose.consume(SimulationConfig.BACTERIA_GLUCOSE_CONSUMPTION_RATE)
+                    bacteria.energy += energy_gained
+                    bacteria.energy = min(200.0, bacteria.energy)
+                    glucose_consumed += 1
+                    
+                    # Registrar en estadísticas
+                    self.stats['glucose_consumed'] += 1
+                    
+                    # Si la glucosa fue completamente consumida, eliminarla
+                    if not glucose.is_active():
+                        self.glucose.remove(glucose)
+                    
+                    # Una bacteria solo consume una glucosa por paso
+                    break
         
         # Actualizar estadísticas
         self.stats['total_captures'] += captures
@@ -281,45 +355,60 @@ class Simulation:
                 print(f"Error calculando fitness de fagocito: {e}")
                 phagocyte.fitness = 0.5  # Valor por defecto
     
-    def natural_reproduction(self):
-        """Reproducción natural dentro de la simulación"""
+    def asexual_reproduction(self):
+        """Reproducción asexual de bacterias"""
         new_bacteria = []
-        new_phagocytes = []
         
-        # Reproducción de bacterias
         for bacteria in self.bacteria[:]:  # Copia para iteración segura
-            if bacteria.is_alive():
+            if not isinstance(bacteria, Bacteria):
+                continue
+            
+            if not bacteria.is_alive():
+                continue
+            
+            # Verificar si puede reproducirse
+            if hasattr(bacteria, 'can_reproduce_asexually') and bacteria.can_reproduce_asexually():
                 try:
-                    child = bacteria.reproduce()
+                    child = bacteria.reproduce_asexually()
                     if child:
                         new_bacteria.append(child)
                         self.stats['total_reproductions'] += 1
+                        
+                        # Registrar en historial
+                        if 'asexual_reproductions' not in self.stats:
+                            self.stats['asexual_reproductions'] = []
+                        
+                        self.stats['asexual_reproductions'].append({
+                            'generation': self.generation,
+                            'parent_id': bacteria.id,
+                            'child_id': child.id,
+                            'parent_energy': bacteria.energy,
+                            'parent_fitness': bacteria.fitness
+                        })
+                        
+                        # Mantener historial limitado
+                        max_history = 100
+                        if len(self.stats['asexual_reproductions']) > max_history:
+                            self.stats['asexual_reproductions'].pop(0)
+                        
                 except Exception as e:
-                    print(f"Error reproduciendo bacteria: {e}")
+                    print(f"Error en reproducción asexual de bacteria {bacteria.id}: {e}")
                     continue
         
-        # Reproducción de fagocitos
-        for phagocyte in self.phagocytes[:]:  # Copia para iteración segura
-            if phagocyte.is_alive():
-                try:
-                    if hasattr(phagocyte, 'reproduce'):
-                        child = phagocyte.reproduce()
-                        if child:
-                            new_phagocytes.append(child)
-                            self.stats['total_reproductions'] += 1
-                except Exception as e:
-                    print(f"Error reproduciendo fagocito: {e}")
-                    continue
-        
-        # Agregar nuevos agentes a las poblaciones
+        # Agregar nuevas bacterias a la población
         self.bacteria.extend(new_bacteria)
-        self.phagocytes.extend(new_phagocytes)
+        
+        # Registrar estadística
+        if new_bacteria:
+            if 'asexual_reproduction_count' not in self.stats:
+                self.stats['asexual_reproduction_count'] = 0
+            self.stats['asexual_reproduction_count'] += len(new_bacteria)
     
     def coevolution_step(self):
         """Paso de evolución coevolutiva usando algoritmo genético"""
         try:
             # Evolucionar ambas poblaciones
-            self.bacteria, self.phagocytes = self.ga.evolve_population(
+            self.bacteria, self.phagocytes = self.ga.evolve_population(  # CAMBIA AQUÍ
                 self.bacteria,
                 self.phagocytes,
                 self.background_color
@@ -497,6 +586,8 @@ class Simulation:
         # Limitar número de agentes para optimizar transferencia
         max_bacteria_show = 200
         max_phagocytes_show = 50
+        max_glucose_show = 50
+        glucose_to_show = self.glucose[:max_glucose_show]
         
         # Seleccionar agentes para mostrar - AÑADIR FILTRO POR TIPO
         bacteria_to_show = [b for b in self.bacteria if isinstance(b, Bacteria)][:max_bacteria_show]
@@ -521,6 +612,10 @@ class Simulation:
                         'id': b.id,
                         'x': b.x,
                         'y': b.y,
+                        'can_reproduce' : b.can_reproduce_asexually() if hasattr(b, 'can_reproduce_asexually') else False,
+                        'reproduction_cooldown': getattr(b, 'reproduction_cooldown', 0),
+                        'offspring_count': getattr(b, 'offspring_count', 0),
+                        'parent_id': getattr(b, 'parent_id', None),
                         'color': b.color,
                         'fitness': b.fitness,
                         'energy': b.energy,
@@ -560,21 +655,58 @@ class Simulation:
                 print(f"Error serializando fagocito: {e}")
                 continue
         
+        # Convertir glucosas a diccionario
+        glucose_data = []
+        for g in glucose_to_show:
+            try:
+                if isinstance(g, Glucose):
+                    glucose_data.append({
+                        'id': g.id,
+                        'x': g.x,
+                        'y': g.y,
+                        'size': g.size,
+                        'energy': g.energy,
+                        'consumed': g.consumed
+                    })
+            except Exception as e:
+                print(f"Error serializando glucosa: {e}")
+                continue
+
         # Calcular estadísticas solo para objetos del tipo correcto
         real_bacteria = [b for b in self.bacteria if isinstance(b, Bacteria)]
         real_phagocytes = [p for p in self.phagocytes if isinstance(p, Phagocyte)]
         
+        # Calcular estadísticas de reproducción
+        reproduction_stats = {
+            'total_asexual': self.stats.get('asexual_reproduction_count', 0),
+            'can_reproduce_now': sum(1 for b in real_bacteria 
+                                    if hasattr(b, 'can_reproduce_asexually') 
+                                    and b.can_reproduce_asexually()),
+            'average_offspring': np.mean([b.offspring_count for b in real_bacteria]) 
+                                if real_bacteria else 0
+        }
+
         return {
             'generation': self.generation,
             'timestamp': datetime.now().isoformat(),
             'agents': {
                 'bacteria': bacteria_data,
-                'phagocytes': phagocytes_data
+                'phagocytes': phagocytes_data,
+                'glucose': glucose_data
             },
             'stats': {
                 'populations': {
                     'bacteria': len(real_bacteria),
-                    'phagocytes': len(real_phagocytes)
+                    'phagocytes': len(real_phagocytes),
+                    'glucose': len(self.glucose)
+                },
+                'reproduction': {
+                    'total_asexual': self.stats.get('asexual_reproduction_count', 0),
+                    'can_reproduce_now': sum(1 for b in real_bacteria 
+                                            if hasattr(b, 'can_reproduce_asexually') 
+                                            and b.can_reproduce_asexually()),
+                    'average_offspring': np.mean([b.offspring_count for b in real_bacteria]) 
+                                        if real_bacteria else 0
                 },
                 'fitness': {
                     'bacteria': {
@@ -594,7 +726,8 @@ class Simulation:
                     'min': min([b.get_vulnerability_score(self.background_color) for b in real_bacteria]) if real_bacteria else 0.0
                 } if real_bacteria else {'max': 0.0, 'avg': 0.0, 'min': 0.0},
                 'captures': self.stats['total_captures'],
-                'reproductions': self.stats['total_reproductions']
+                'reproductions': self.stats['total_reproductions'],
+                'glucose_consumed': self.stats['glucose_consumed']
             },
             'parameters': self.get_parameters(),
             'environment': {

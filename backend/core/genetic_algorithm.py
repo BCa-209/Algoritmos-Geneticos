@@ -1,199 +1,233 @@
 """
-Algoritmo genético para evolución de agentes
+Algoritmo genético simplificado que funciona con DEAP
 """
-import numpy as np
 import random
-from typing import List, Tuple, Dict, Any, Optional
-from .agents import Agent, Bacteria, Phagocyte
+import numpy as np
+from typing import List, Tuple, Dict, Any
+from deap import base, creator, tools, algorithms
+
+from .agents import Bacteria, Phagocyte
+from models.genome import Genome
 from config import SimulationConfig
 
-class GeneticAlgorithm:
-    """Algoritmo genético para evolución de agentes"""
+# Crear tipos DEAP una sola vez
+try:
+    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    creator.create("BacteriaIndividual", dict, fitness=creator.FitnessMax)
+    creator.create("PhagocyteIndividual", dict, fitness=creator.FitnessMax)
+except Exception:
+    pass  # Los tipos ya existen
+
+class GeneticAlgorithmDEAP:
+    """Algoritmo genético que usa DEAP - Versión corregida"""
     
-    def __init__(self, mutation_rate: float = None, 
+    def __init__(self, 
+                mutation_rate: float = None,
                 crossover_rate: float = None,
                 mutation_strength: float = None):
-        """Inicializar algoritmo genético"""
+        
         self.mutation_rate = mutation_rate or SimulationConfig.MUTATION_RATE
         self.crossover_rate = crossover_rate or SimulationConfig.CROSSOVER_RATE
         self.mutation_strength = mutation_strength or SimulationConfig.MUTATION_STRENGTH
         
-    def selection(self, agents: List[Agent], 
-                selection_type: str = 'tournament',
-                tournament_size: int = 3) -> List[Agent]:
-        """Selección de padres basada en aptitud"""
-        if not agents:
-            return []
-        
-        selected_parents = []
-        
-        if selection_type == 'tournament':
-            # Selección por torneo
-            for _ in range(len(agents)):
-                tournament = random.sample(agents, min(tournament_size, len(agents)))
-                winner = max(tournament, key=lambda a: a.fitness)
-                selected_parents.append(winner)
-                
-        elif selection_type == 'roulette':
-            # Selección por ruleta (proporcional a fitness)
-            total_fitness = sum(agent.fitness for agent in agents)
-            if total_fitness > 0:
-                probabilities = [agent.fitness / total_fitness for agent in agents]
-                selected_parents = random.choices(agents, weights=probabilities, k=len(agents))
-            else:
-                selected_parents = random.choices(agents, k=len(agents))
-                
-        elif selection_type == 'rank':
-            # Selección por ranking
-            sorted_agents = sorted(agents, key=lambda a: a.fitness, reverse=True)
-            ranks = list(range(1, len(sorted_agents) + 1))
-            total_rank = sum(ranks)
-            probabilities = [rank / total_rank for rank in ranks]
-            selected_parents = random.choices(sorted_agents, weights=probabilities, k=len(agents))
-        
-        return selected_parents
+        # Crear toolboxes
+        self.bacteria_toolbox = self._create_bacteria_toolbox()
+        self.phagocyte_toolbox = self._create_phagocyte_toolbox()
     
-    def crossover(self, parent1: Agent, parent2: Agent) -> Tuple[Dict[str, float], Dict[str, float]]:
-        """Cruce de genomas de dos padres"""
-        genome1 = parent1.genome.copy()
-        genome2 = parent2.genome.copy()
+    def _create_bacteria_toolbox(self):
+        """Crear toolbox para bacterias"""
+        toolbox = base.Toolbox()
         
-        child1_genome = {}
-        child2_genome = {}
+        # Función para crear individuo bacteria
+        def create_bacteria_individual():
+            genome = Genome.create_random("bacteria")
+            ind = creator.BacteriaIndividual(genome.genes)
+            return ind
         
-        # Cruzar cada gen del genoma
-        for gene in genome1.keys():
-            if random.random() < self.crossover_rate:
-                # Intercambiar valores
-                child1_genome[gene] = genome2.get(gene, genome1[gene])
-                child2_genome[gene] = genome1.get(gene, genome2[gene])
-            else:
-                # Mantener valores originales
-                child1_genome[gene] = genome1[gene]
-                child2_genome[gene] = genome2[gene]
+        toolbox.register("individual", create_bacteria_individual)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         
-        return child1_genome, child2_genome
+        # Operadores genéticos
+        toolbox.register("mate", self._cx_uniform, indpb=0.5)
+        toolbox.register("mutate", self._mutate_gaussian, 
+                        mu=0, sigma=self.mutation_strength, indpb=self.mutation_rate)
+        toolbox.register("select", tools.selTournament, tournsize=3)
+        
+        return toolbox
     
-    def mutate(self, genome: Dict[str, float]) -> Dict[str, float]:
-        """Aplicar mutación a un genoma"""
-        mutated_genome = genome.copy()
+    def _create_phagocyte_toolbox(self):
+        """Crear toolbox para fagocitos"""
+        toolbox = base.Toolbox()
         
-        for gene, value in mutated_genome.items():
-            if random.random() < self.mutation_rate:
-                # Mutación gaussiana
-                mutation = np.random.normal(0, self.mutation_strength)
-                new_value = value + mutation
-                
-                # Asegurar que el valor esté en [0, 1]
-                new_value = max(0.0, min(1.0, new_value))
-                
-                mutated_genome[gene] = new_value
+        # Función para crear individuo fagocito
+        def create_phagocyte_individual():
+            genome = Genome.create_random("phagocyte")
+            ind = creator.PhagocyteIndividual(genome.genes)
+            return ind
         
-        return mutated_genome
+        toolbox.register("individual", create_phagocyte_individual)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        
+        # Operadores genéticos
+        toolbox.register("mate", self._cx_uniform, indpb=0.5)
+        toolbox.register("mutate", self._mutate_gaussian, 
+                        mu=0, sigma=self.mutation_strength * 1.5, indpb=self.mutation_rate * 1.2)
+        toolbox.register("select", tools.selTournament, tournsize=5)
+        
+        return toolbox
     
-    # En genetic_algorithm.py, corregir el método create_new_generation
-
-    def create_new_generation(self, agents: List[Agent], 
-                            target_size: int,
-                            elitism: int = 2) -> List[Agent]:
-        """Crear nueva generación de agentes"""
-        if not agents:
-            return []
-        
-        # Ordenar por fitness
-        agents.sort(key=lambda a: a.fitness, reverse=True)
-        new_generation = []
-        
-        # Elitismo: mantener los mejores agentes
-        for i in range(min(elitism, len(agents))):
-            elite = agents[i].copy()
-            elite.id = f"{elite.species}_{len(new_generation)}"
-            new_generation.append(elite)
-        
-        # Selección de padres
-        parents = self.selection(agents, selection_type='tournament')
-        
-        # Reproducción hasta alcanzar tamaño objetivo
-        while len(new_generation) < target_size:
-            # Seleccionar dos padres aleatorios
-            if len(parents) < 2:
-                break
-                
-            parent1, parent2 = random.sample(parents, 2)
-            
-            # Cruzar
-            child1_genome, child2_genome = self.crossover(parent1, parent2)
-            
-            # Mutar
-            child1_genome = self.mutate(child1_genome)
-            child2_genome = self.mutate(child2_genome)
-            
-            # Crear nuevos agentes - CORREGIDO: usar las clases correctas
-            if parent1.species == 'bacteria':
-                # IMPORTANTE: Usar Bacteria() no Agent()
-                child1 = Bacteria(genome=child1_genome)
-                child2 = Bacteria(genome=child2_genome)
-            elif parent1.species == 'phagocyte':
-                # IMPORTANTE: Usar Phagocyte() no Agent()
-                child1 = Phagocyte(genome=child1_genome)
-                child2 = Phagocyte(genome=child2_genome)
-            else:
-                # Fallback a Agent si no se reconoce la especie
-                child1 = Agent(
-                    id=f"{parent1.species}_{len(new_generation)}",
-                    species=parent1.species,
-                    x=0, y=0,
-                    genome=child1_genome,
-                    color=(128, 128, 128)
-                )
-                child2 = Agent(
-                    id=f"{parent1.species}_{len(new_generation)+1}",
-                    species=parent1.species,
-                    x=0, y=0,
-                    genome=child2_genome,
-                    color=(128, 128, 128)
-                )
-            
-            # Asignar IDs únicos
-            child1.id = f"{child1.species}_{len(new_generation)}"
-            new_generation.append(child1)
-            
-            if len(new_generation) < target_size:
-                child2.id = f"{child2.species}_{len(new_generation)}"
-                new_generation.append(child2)
-        
-        return new_generation
+    def _cx_uniform(self, ind1, ind2, indpb):
+        """Cruce uniforme"""
+        for key in ind1:
+            if random.random() < indpb:
+                ind1[key], ind2[key] = ind2[key], ind1[key]
+        return ind1, ind2
+    
+    def _mutate_gaussian(self, individual, mu, sigma, indpb):
+        """Mutación gaussiana"""
+        for key in individual:
+            if random.random() < indpb:
+                individual[key] += random.gauss(mu, sigma)
+                individual[key] = max(0.0, min(1.0, individual[key]))
+        return individual,
+    
+    def evaluate_bacteria_fitness(self, individual, background_color):
+        """Evaluar fitness de bacteria"""
+        bacteria = Bacteria(genome=dict(individual))
+        bacteria.calculate_fitness(background_color)
+        return (bacteria.fitness,)
+    
+    def evaluate_phagocyte_fitness(self, individual, background_color, bacteria_list):
+        """Evaluar fitness de fagocito"""
+        phagocyte = Phagocyte(genome=dict(individual))
+        phagocyte.calculate_fitness(background_color, bacteria_list)
+        return (phagocyte.fitness,)
     
     def evolve_population(self, bacteria: List[Bacteria], 
-                        phagocytes: List[Phagocyte],
-                        background_color: Tuple[int, int, int]) -> Tuple[List[Bacteria], List[Phagocyte]]:
-        """Evolucionar ambas poblaciones de forma coevolutiva"""
+                         phagocytes: List[Phagocyte],
+                         background_color: Tuple[int, int, int]) -> Tuple[List[Bacteria], List[Phagocyte]]:
+        """Evolucionar ambas poblaciones usando DEAP"""
         
-        # Calcular fitness para bacterias (basado en camuflaje)
-        for bacteria_agent in bacteria:
-            bacteria_agent.calculate_fitness(background_color)
+        # 1. Convertir bacterias a población DEAP
+        bacteria_population = []
+        for bact in bacteria:
+            if isinstance(bact, Bacteria):
+                ind = creator.BacteriaIndividual(bact.genome)
+                ind.fitness.values = (bact.fitness,)
+                bacteria_population.append(ind)
         
-        # Calcular fitness para fagocitos (basado en éxito de caza)
-        for phagocyte in phagocytes:
-            phagocyte.calculate_fitness(background_color, bacteria)
+        # 2. Convertir fagocitos a población DEAP
+        phagocyte_population = []
+        for phago in phagocytes:
+            if isinstance(phago, Phagocyte):
+                ind = creator.PhagocyteIndividual(phago.genome)
+                ind.fitness.values = (phago.fitness,)
+                phagocyte_population.append(ind)
         
-        # Crear nueva generación para cada especie
-        new_bacteria = self.create_new_generation(
-            bacteria, 
-            target_size=len(bacteria)
-        )
+        # 3. Asegurar tamaño mínimo de población
+        min_pop_size = 5
+        if len(bacteria_population) < min_pop_size:
+            extra = self.bacteria_toolbox.population(n=min_pop_size - len(bacteria_population))
+            bacteria_population.extend(extra)
         
-        new_phagocytes = self.create_new_generation(
-            phagocytes,
-            target_size=len(phagocytes)
-        )
+        if len(phagocyte_population) < min_pop_size:
+            extra = self.phagocyte_toolbox.population(n=min_pop_size - len(phagocyte_population))
+            phagocyte_population.extend(extra)
+        
+        # 4. Configurar evaluación
+        self.bacteria_toolbox.register("evaluate", 
+                                     self.evaluate_bacteria_fitness,
+                                     background_color=background_color)
+        
+        self.phagocyte_toolbox.register("evaluate",
+                                      self.evaluate_phagocyte_fitness,
+                                      background_color=background_color,
+                                      bacteria_list=bacteria)
+        
+        # 5. Evolucionar bacterias
+        if bacteria_population:
+            # Evaluar población inicial
+            for ind in bacteria_population:
+                if not ind.fitness.valid:
+                    ind.fitness.values = self.bacteria_toolbox.evaluate(ind)
+            
+            # Ejecutar una generación
+            bacteria_population = self._run_one_generation(
+                bacteria_population, self.bacteria_toolbox,
+                self.crossover_rate, self.mutation_rate
+            )
+        
+        # 6. Evolucionar fagocitos
+        if phagocyte_population:
+            # Evaluar población inicial
+            for ind in phagocyte_population:
+                if not ind.fitness.valid:
+                    ind.fitness.values = self.phagocyte_toolbox.evaluate(ind)
+            
+            # Ejecutar una generación
+            phagocyte_population = self._run_one_generation(
+                phagocyte_population, self.phagocyte_toolbox,
+                self.crossover_rate * 0.8, self.mutation_rate * 1.2
+            )
+        
+        # 7. Convertir de vuelta a agentes
+        new_bacteria = []
+        for ind in bacteria_population:
+            if hasattr(ind, 'genes'):
+                genome_dict = ind.genes
+            else:
+                genome_dict = dict(ind)
+            
+            new_bact = Bacteria(genome=genome_dict)
+            new_bacteria.append(new_bact)
+        
+        new_phagocytes = []
+        for ind in phagocyte_population:
+            if hasattr(ind, 'genes'):
+                genome_dict = ind.genes
+            else:
+                genome_dict = dict(ind)
+            
+            new_phago = Phagocyte(genome=genome_dict)
+            new_phagocytes.append(new_phago)
         
         return new_bacteria, new_phagocytes
+    
+    def _run_one_generation(self, population, toolbox, cxpb, mutpb):
+        """Ejecutar una generación de evolución"""
+        # 1. Seleccionar padres
+        offspring = toolbox.select(population, len(population))
+        
+        # 2. Clonar los seleccionados
+        offspring = list(map(toolbox.clone, offspring))
+        
+        # 3. Aplicar cruce y mutación
+        for i in range(1, len(offspring), 2):
+            if random.random() < cxpb:
+                offspring[i-1], offspring[i] = toolbox.mate(offspring[i-1], offspring[i])
+                del offspring[i-1].fitness.values
+                del offspring[i].fitness.values
+        
+        for i in range(len(offspring)):
+            if random.random() < mutpb:
+                offspring[i], = toolbox.mutate(offspring[i])
+                del offspring[i].fitness.values
+        
+        # 4. Evaluar hijos con fitness inválido
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+        for ind, fit in zip(invalid_ind, fitnesses):
+            ind.fitness.values = fit
+        
+        # 5. Reemplazar población
+        population[:] = offspring
+        
+        return population
     
     def update_parameters(self, mutation_rate: float = None,
                         crossover_rate: float = None,
                         mutation_strength: float = None):
-        """Actualizar parámetros del algoritmo genético"""
+        """Actualizar parámetros del algoritmo"""
         if mutation_rate is not None:
             self.mutation_rate = max(0.0, min(1.0, mutation_rate))
         if crossover_rate is not None:

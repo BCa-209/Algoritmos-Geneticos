@@ -494,3 +494,30 @@ header .subtitle {
         justify-content: center;
     }
 }
+
+/* Añade esto a tu styles.css */
+.reproduction-stats {
+    background: linear-gradient(135deg, #d4edda, #c3e6cb);
+    border-left: 4px solid #28a745;
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.reproduction-stats h4 {
+    color: #155724;
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+#can-reproduce-now {
+    color: #198754;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}

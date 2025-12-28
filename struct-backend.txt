@@ -45,9 +45,14 @@ Simulación de Coevolución Antagónica: Bacterias vs. Fagocitos en un Entorno E
 │       ├── fitness.py
 │       └── helpers.py
 ├── frontend/
+│   ├── modules/
+│   ├── assets/
 │   ├── index.html
 │   ├── app.js
 │   └── styles.css
 ├── models/ (opcional)
 │   └── genome.py
 └── app.py (punto de entrada principal)
+
+
+el sistema funciona bien pero , ahora quiero que las bacterias puedan reproducirse de forma asexual (la bacteria que alcance un treshold de energia tras consumir glucosa desaparece y en su lugar aparecen otras 2 iguales) y para ello voy a implementar una nueva funcionalidad para que aparezca alimento(glucosa que sera representada por una imagen) en lugares aleatorios. ayudame a mejorar esta idea

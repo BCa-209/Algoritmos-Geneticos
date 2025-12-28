@@ -65,7 +65,32 @@ class SimulationConfig:
     VULNERABILITY_COLOR_WEIGHT: float = 0.6  # Peso del color en vulnerabilidad
     VULNERABILITY_ENERGY_WEIGHT: float = 0.3  # Peso de la energía
     VULNERABILITY_AGE_WEIGHT: float = 0.1     # Peso de la edad
-    
+
+    # Parámetros DEAP
+    DEAP_SELECTION_METHOD: str = 'tournament'  # 'tournament', 'roulette', 'best', 'random'
+    DEAP_CROSSOVER_METHOD: str = 'uniform'     # 'uniform', 'onepoint', 'twopoint'
+    DEAP_POPULATION_SIZE: int = 100
+    DEAP_GENERATIONS: int = 10
+    DEAP_HALL_OF_FAME_SIZE: int = 5
+
+    # Parámetros de Glucosa
+    INITIAL_GLUCOSE_COUNT: int = 30
+    MAX_GLUCOSE_COUNT: int = 50
+    GLUCOSE_SPAWN_RATE: float = 0.1  # Probabilidad de spawn por generación
+    GLUCOSE_MIN_SIZE: float = 5.0
+    GLUCOSE_MAX_SIZE: float = 20.0
+    GLUCOSE_ENERGY_MULTIPLIER: float = 5.0  # Energía = tamaño × multiplicador
+    BACTERIA_GLUCOSE_CONSUMPTION_RATE: float = 0.5  # Cuánta energía obtienen las bacterias
+    GLUCOSE_RESPAWN_THRESHOLD: int = 10  # Mínimo de glucosas activas para spawnear nuevas
+
+    # Parámetros de Reproducción Asexual
+    BACTERIA_REPRODUCTION_ENERGY_THRESHOLD: float = 150.0  # Energía mínima para reproducirse
+    BACTERIA_REPRODUCTION_ENERGY_COST: float = 75.0  # Energía que gasta al reproducirse
+    BACTERIA_REPRODUCTION_COOLDOWN: int = 10  # Generaciones entre reproducciones
+    BACTERIA_OFFSET_DISTANCE: float = 15.0  # Distancia de la bacteria hija
+    BACTERIA_REPRODUCTION_MUTATION_RATE: float = 0.2  # Tasa de mutación en reproducción asexual
+
+
     @classmethod
     def get_default_parameters(cls) -> Dict[str, Any]:
         """Obtener parámetros por defecto como diccionario"""
@@ -102,7 +127,29 @@ class SimulationConfig:
             'detection_priority': cls.DETECTION_PRIORITY,
             'vulnerability_color_weight': cls.VULNERABILITY_COLOR_WEIGHT,
             'vulnerability_energy_weight': cls.VULNERABILITY_ENERGY_WEIGHT,
-            'vulnerability_age_weight': cls.VULNERABILITY_AGE_WEIGHT
+            'vulnerability_age_weight': cls.VULNERABILITY_AGE_WEIGHT,
+            'deap_selection_method': cls.DEAP_SELECTION_METHOD,
+            'deap_crossover_method': cls.DEAP_CROSSOVER_METHOD,
+            'deap_population_size': cls.DEAP_POPULATION_SIZE,
+            'deap_generations': cls.DEAP_GENERATIONS,
+            'deap_hall_of_fame_size': cls.DEAP_HALL_OF_FAME_SIZE,
+
+            # Parámetros de glucosa
+            'initial_glucose_count': cls.INITIAL_GLUCOSE_COUNT,
+            'max_glucose_count': cls.MAX_GLUCOSE_COUNT,
+            'glucose_spawn_rate': cls.GLUCOSE_SPAWN_RATE,
+            'glucose_min_size': cls.GLUCOSE_MIN_SIZE,
+            'glucose_max_size': cls.GLUCOSE_MAX_SIZE,
+            'glucose_energy_multiplier': cls.GLUCOSE_ENERGY_MULTIPLIER,
+            'bacteria_glucose_consumption_rate': cls.BACTERIA_GLUCOSE_CONSUMPTION_RATE,
+            'glucose_respawn_threshold': cls.GLUCOSE_RESPAWN_THRESHOLD,
+
+            # Parámetros de reproducción
+            'bacteria_reproduction_energy_threshold': cls.BACTERIA_REPRODUCTION_ENERGY_THRESHOLD,
+            'bacteria_reproduction_energy_cost': cls.BACTERIA_REPRODUCTION_ENERGY_COST,
+            'bacteria_reproduction_cooldown': cls.BACTERIA_REPRODUCTION_COOLDOWN,
+            'bacteria_offset_distance': cls.BACTERIA_OFFSET_DISTANCE,
+            'bacteria_reproduction_mutation_rate': cls.BACTERIA_REPRODUCTION_MUTATION_RATE,
         }
     
     @classmethod

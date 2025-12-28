@@ -38,35 +38,62 @@
                 </div>
                 
                 <!-- Estadísticas en tiempo real -->
-                <div class="stats-container">
-                    <h3>📊 Estadísticas en Tiempo Real</h3>
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <span class="stat-label">Generación</span>
-                            <span id="generation" class="stat-value">0</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-label">Bacterias</span>
-                            <span id="bacteria-count" class="stat-value">0</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-label">Fagocitos</span>
-                            <span id="phagocyte-count" class="stat-value">0</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-label">Capturas</span>
-                            <span id="total-captures" class="stat-value">0</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-label">Reproducciones</span>
-                            <span id="total-reproductions" class="stat-value">0</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-label">Tiempo</span>
-                            <span id="run-time" class="stat-value">0s</span>
-                        </div>
-                    </div>
+<div class="stats-container">
+    <h3>📊 Estadísticas en Tiempo Real</h3>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span class="stat-label">Generación</span>
+            <span id="generation" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Bacterias</span>
+            <span id="bacteria-count" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Fagocitos</span>
+            <span id="phagocyte-count" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Glucosas</span>
+            <span id="glucose-count" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Capturas</span>
+            <span id="total-captures" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Reproducciones</span>
+            <span id="total-reproductions" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Tiempo</span>
+            <span id="run-time" class="stat-value">0s</span>
+        </div>
+        <!-- NUEVAS ESTADÍSTICAS DE REPRODUCCIÓN -->
+        <div class="stat-card" style="grid-column: span 2; background: linear-gradient(135deg, #d4edda, #c3e6cb); border: 2px solid #28a745;">
+            <span class="stat-label" style="color: #155724; font-weight: bold;">🔄 Reproducción Asexual</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px;">
+                <div>
+                    <span class="stat-label" style="font-size: 0.8em;">Total:</span>
+                    <span id="asexual-reproductions" class="stat-value" style="color: #198754;">0</span>
                 </div>
+                <div>
+                    <span class="stat-label" style="font-size: 0.8em;">Pueden:</span>
+                    <span id="can-reproduce-now" class="stat-value" style="color: #198754; animation: pulse 2s infinite;">0</span>
+                </div>
+                <div>
+                    <span class="stat-label" style="font-size: 0.8em;">Hijos/bacteria:</span>
+                    <span id="avg-offspring" class="stat-value" style="color: #198754;">0.0</span>
+                </div>
+                <div>
+                    <span class="stat-label" style="font-size: 0.8em;">Glucosas cons.:</span>
+                    <span id="glucose-consumed" class="stat-value" style="color: #e65100;">0</span>
+                </div>
+            </div>
+        </div>
+        <!-- FIN NUEVAS ESTADÍSTICAS -->
+    </div>
+</div>
             </div>
             
             <div class="right-panel">
@@ -183,6 +210,6 @@
         <div id="notification" class="notification"></div>
     </div>
     
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>

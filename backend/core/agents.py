@@ -147,9 +147,11 @@ class Bacteria(Agent):
     """Agente Bacteria (presa) - Forma de bastón (bacilo)"""
     
     def __init__(self, id: str = None, 
-                 x: float = None, 
-                 y: float = None,
-                 genome: Dict[str, float] = None):
+                x: float = None, 
+                y: float = None,
+                genome: Dict[str, float] = None,
+                parent_id: str = None):
+
         """Inicializar bacteria"""
         # Valores por defecto
         if genome is None:
@@ -166,6 +168,11 @@ class Bacteria(Agent):
         # Dimensiones del bastón basadas en genes
         self.length_gene = genome.get('length_gene', random.random())
         self.width_gene = genome.get('width_gene', random.random())
+
+        # var de repro asexx
+        self.reproduction_cooldown = 0
+        self.offspring_count = 0
+        self.parent_id = parent_id
         
         # Posición aleatoria si no se especifica
         if x is None:
@@ -265,42 +272,88 @@ class Bacteria(Agent):
         
         return min(1.0, max(0.0, vulnerability_score))
     
-    def reproduce(self) -> Optional['Bacteria']:
-        """Reproducción asexual (si tiene suficiente energía)"""
-        if self.energy > 150:
-            self.energy -= 50
-            
-            # Crear nueva bacteria con mutación
-            child_genome = self.genome.copy()
-            
-            # Mutación en genes de color
-            if random.random() < SimulationConfig.MUTATION_RATE:
-                color_gene = child_genome.get('color_gene', random.random())
-                color_gene += random.uniform(-0.1, 0.1)
-                color_gene = max(0.0, min(1.0, color_gene))
-                child_genome['color_gene'] = color_gene
-            
-            # Mutación en genes de forma
-            if random.random() < SimulationConfig.MUTATION_RATE:
-                length_gene = child_genome.get('length_gene', random.random())
-                length_gene += random.uniform(-0.1, 0.1)
-                length_gene = max(0.0, min(1.0, length_gene))
-                child_genome['length_gene'] = length_gene
-            
-            if random.random() < SimulationConfig.MUTATION_RATE:
-                width_gene = child_genome.get('width_gene', random.random())
-                width_gene += random.uniform(-0.1, 0.1)
-                width_gene = max(0.0, min(1.0, width_gene))
-                child_genome['width_gene'] = width_gene
-            
-            child = Bacteria(genome=child_genome)
-            child.x = self.x + random.uniform(-20, 20)
-            child.y = self.y + random.uniform(-20, 20)
-            child.direction = self.direction + random.uniform(-0.5, 0.5)
-            
-            return child
+    def can_reproduce_asexually(self) -> bool:
+            """Verificar si la bacteria puede reproducirse asexualmente"""
+            return (self.energy >= SimulationConfig.BACTERIA_REPRODUCTION_ENERGY_THRESHOLD and
+                    self.reproduction_cooldown <= 0 and
+                    self.is_alive())
+    
+    def reproduce_asexually(self) -> Optional['Bacteria']:
+        """Reproducción asexual - crea un clon con mutaciones menores"""
+        if not self.can_reproduce_asexually():
+            return None
         
-        return None
+        # Gastar energía para reproducirse
+        reproduction_cost = SimulationConfig.BACTERIA_REPRODUCTION_ENERGY_COST
+        self.energy -= reproduction_cost
+        
+        # Aplicar tiempo de enfriamiento
+        self.reproduction_cooldown = SimulationConfig.BACTERIA_REPRODUCTION_COOLDOWN
+        self.offspring_count += 1
+        
+        # Crear genoma del hijo (copia del padre con mutaciones)
+        child_genome = self._create_child_genome()
+        
+        # Calcular posición para el hijo (cerca del padre)
+        offset_distance = SimulationConfig.BACTERIA_OFFSET_DISTANCE
+        angle = random.uniform(0, 2 * math.pi)
+        child_x = self.x + offset_distance * math.cos(angle)
+        child_y = self.y + offset_distance * math.sin(angle)
+        
+        # Asegurar que esté dentro del canvas
+        child_x = max(0, min(child_x, SimulationConfig.CANVAS_WIDTH))
+        child_y = max(0, min(child_y, SimulationConfig.CANVAS_HEIGHT))
+        
+        # Crear bacteria hija
+        child = Bacteria(
+            x=child_x,
+            y=child_y,
+            genome=child_genome,
+            parent_id=self.id  # Registrar quién es el padre
+        )
+        
+        # Heredar algunas propiedades
+        child.energy = reproduction_cost * 0.5  # Energía inicial
+        child.direction = self.direction + random.uniform(-0.5, 0.5)
+        
+        print(f"Bacteria {self.id} se reprodujo asexualmente. Hijo: {child.id}")
+        return child
+    
+    def _create_child_genome(self) -> Dict[str, float]:
+        """Crear genoma del hijo con posibles mutaciones"""
+        child_genome = self.genome.copy()
+        
+        mutation_rate = SimulationConfig.BACTERIA_REPRODUCTION_MUTATION_RATE
+        mutation_strength = SimulationConfig.MUTATION_STRENGTH * 0.5  # Mutaciones más suaves
+        
+        for gene_name in child_genome:
+            if random.random() < mutation_rate:
+                # Mutación gaussiana
+                mutation = np.random.normal(0, mutation_strength)
+                new_value = child_genome[gene_name] + mutation
+                
+                # Mantener en rango [0, 1]
+                child_genome[gene_name] = max(0.0, min(1.0, new_value))
+                
+                # Mutaciones especiales para ciertos genes
+                if gene_name == 'color_gene':
+                    # Mutación de color más controlada
+                    color_mutation = random.uniform(-0.05, 0.05)
+                    child_genome[gene_name] += color_mutation
+                    child_genome[gene_name] = max(0.0, min(1.0, child_genome[gene_name]))
+        
+        # Posibilidad de mutación de nuevo gen
+        if random.random() < mutation_rate * 0.1:
+            new_gene_name = f"special_gene_{random.randint(1, 3)}"
+            child_genome[new_gene_name] = random.random()
+        
+        return child_genome
+    
+    def update_reproduction_cooldown(self):
+        """Actualizar tiempo de enfriamiento para reproducción"""
+        if self.reproduction_cooldown > 0:
+            self.reproduction_cooldown -= 1
+    
     
     def get_bacillus_dimensions(self):
         """Obtener dimensiones del bastón"""
@@ -315,15 +368,18 @@ class Bacteria(Agent):
         return length, width
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convertir bacteria a diccionario incluyendo propiedades específicas"""
+        """Convertir bacteria a diccionario incluyendo propiedades de reproducción"""
         data = super().to_dict()
         data.update({
             'direction': self.direction,
             'length_gene': self.length_gene,
-            'width_gene': self.width_gene
+            'width_gene': self.width_gene,
+            'can_reproduce': self.can_reproduce_asexually(),
+            'reproduction_cooldown': self.reproduction_cooldown,
+            'offspring_count': self.offspring_count,
+            'parent_id': self.parent_id
         })
         return data
-
 
 class Phagocyte(Agent):
     """Agente Fagocito (cazador) - Forma circular con centro negro"""
@@ -562,3 +618,79 @@ class Phagocyte(Agent):
             'aggression_gene': self.genome.get('aggression_gene', 0.5)
         })
         return data
+    
+# Añadir al final del archivo agents.py
+
+@dataclass
+class Glucose:
+    """Agente Glucosa - Fuente de energía para bacterias"""
+    
+    def __init__(self, id: str = None, 
+                 x: float = None, 
+                 y: float = None,
+                 size: float = None):
+        """Inicializar glucosa"""
+        if id is None:
+            id = f"glucose_{random.randint(1000, 9999)}"
+        
+        self.id = id
+        self.species = "glucose"
+        
+        # Posición aleatoria si no se especifica
+        if x is None:
+            x = random.uniform(0, SimulationConfig.CANVAS_WIDTH)
+        if y is None:
+            y = random.uniform(0, SimulationConfig.CANVAS_HEIGHT)
+        
+        self.x = x
+        self.y = y
+        
+        # Tamaño aleatorio entre límites
+        if size is None:
+            self.size = random.uniform(5.0, 20.0)  # Tamaño en píxeles
+        else:
+            self.size = size
+        
+        # Energía disponible (proporcional al tamaño)
+        self.energy = self.size * 5.0  # Más grande = más energía
+        self.consumed = False  # Si ya fue consumida
+    
+    def consume(self, amount: float = 10.0) -> float:
+        """Consumir energía de la glucosa"""
+        if self.consumed:
+            return 0.0
+        
+        energy_given = min(amount, self.energy)
+        self.energy -= energy_given
+        
+        # Reducir tamaño proporcionalmente
+        self.size = max(2.0, self.size * (self.energy / (self.size * 5.0)))
+        
+        if self.energy <= 0:
+            self.consumed = True
+            self.size = 0.0
+        
+        return energy_given
+    
+    def is_active(self) -> bool:
+        """Verificar si la glucosa aún tiene energía"""
+        return not self.consumed and self.energy > 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convertir glucosa a diccionario para serialización"""
+        return {
+            'id': self.id,
+            'species': self.species,
+            'x': self.x,
+            'y': self.y,
+            'size': self.size,
+            'energy': self.energy,
+            'consumed': self.consumed
+        }
+    
+    def copy(self) -> 'Glucose':
+        """Crear copia de la glucosa"""
+        glucose = Glucose(id=self.id, x=self.x, y=self.y, size=self.size)
+        glucose.energy = self.energy
+        glucose.consumed = self.consumed
+        return glucose
